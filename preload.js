@@ -1,13 +1,15 @@
+console.log("preloading preload.js")
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+// import { Client } from 'discord-rpc'
 const RPC = require('discord-rpc')
 const openExplorer = require('open-file-explorer')
 // const keytar = require('keytar')
 const { ipcRenderer } = require('electron')
 const { dialog, shell, BrowserWindow } = require('@electron/remote')
 const execSync = require('child_process').execSync
-const { contextIsolated } = require('process')
+// const { contextIsolated } = require('process')
 
 const slash = os.platform() == 'win32' ? "\\" : "/"
 
@@ -107,6 +109,8 @@ function saveAsJson() {
 	if (description.length == 1) { description += "_" }
 	let state = document.getElementById("description-input-2").value.toString()
 	if (state.length == 1) { state += "_" }
+	let startTimestamp = new Date(document.getElementById("start-timestamp").value).getTime() / 1000
+	if (isNaN(startTimestamp)) startTimestamp = undefined
 	let largeimage = document.getElementById("large-image-input").value.toString()
 	let smallimage = document.getElementById("small-image-input").value.toString()
 	largeimage = largeimage == "None" ? "" : largeimage
@@ -127,6 +131,7 @@ function saveAsJson() {
 		clientid: clientID,
 		description: description,
 		state: state,
+		startTimestamp: startTimestamp,
 		largeimage: largeimage,
 		smallimage: smallimage,
 		buttons: buttons
@@ -134,10 +139,13 @@ function saveAsJson() {
 
 	const data = JSON.stringify(content, null, 2)
 	let filename = presenceid == "" ? generateId(10) : presenceid
-	fs.writeFileSync(`${dir}${slash}${filename}.json`, data, 'utf8', (err) => {
+	let filepath = `${dir}${slash}${filename}.json`
+	fs.writeFileSync(filepath, data, 'utf8', (err) => {
+		console.log("tf this shouldn't be printed")
 		if (err) { throw err }
 		else { console.log("saved") }
 	})
+	console.log("saved presence in " + filepath, content)
 	return filename
 }
 
@@ -177,9 +185,9 @@ async function bootClientId(presence, ready) {
 		if (response.ok) {
 			//client id is valid, enable inputs
 			options = await fetch(`https://discord.com/api/oauth2/applications/${inp.value.toString()}/assets`).then(options => options.json())
-			clientID = inp.value//get clientid and store it
+			clientID = inp.value//get clientid and store itdz
 
-			console.log(options)
+			// console.log(options) // image options
 
 			//enable everything on valid clientid
 			enableOnClientid.forEach((item, i, arr) => {
@@ -201,7 +209,7 @@ async function bootClientId(presence, ready) {
 			})
 
 			//if we are loading a presence
-			console.log("loading: ", presence)
+			// console.log("loading: ", presence)
 			if (Object.keys(presence).length > 0) {
 				//console.log("loading: ", presence)
 
@@ -210,6 +218,7 @@ async function bootClientId(presence, ready) {
 				let desc1 = document.getElementById("description-input-1")
 				let desc2 = document.getElementById("description-input-2")
 
+				let timePicker = document.getElementById("start-timestamp")
 
 				//fill in the values from provided presence, and simulate user clicking / typing in the inputs, so the preview updates.
 				largeimg.querySelectorAll("option").forEach(opt => {
@@ -241,6 +250,12 @@ async function bootClientId(presence, ready) {
 
 				desc1.dispatchEvent(new Event("input"))
 				desc2.dispatchEvent(new Event("input"))
+
+				if (presence.startTimestamp) {
+					let localTimestamp = presence.startTimestamp-new Date(presence.startTimestamp*1000).getTimezoneOffset()*60
+					timePicker.value = new Date(localTimestamp*1000).toISOString().substring(0, 16)
+				} else timePicker.value = ""
+				timePicker.dispatchEvent(new Event("input"))
 
 				if (presence.buttons.length > 0) {
 					if (presence.buttons.length == 2) {
@@ -283,6 +298,7 @@ async function bootClientId(presence, ready) {
 
 //load a presence - clear all inputs
 function loadPresence(presence, file) {
+	console.log("loading", presence)
 	document.getElementById("presence-id").value = file.replaceAll(".json", "")
 	document.getElementById("presence-name-input").value = presence.name
 	document.getElementById("clientid-input").value = presence.clientid
@@ -304,12 +320,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	// Check for updates
 	function checkForUpdates() {
-		let run = false
+		let run = false;
 
-		const latestVersion = require('latest-version');
+		// causes error saying this must be loaded via import
+		// const latestVersion = require('latest-version');
 
 		(async () => {
-			const ver = await latestVersion('discordrpcmaker')
+			// const ver = await latestVersion('discordrpcmaker')
+			const ver = '2.1.1'
 			console.log(ver)
 			if (ver != '2.1.1' && !run) {
 				const msg = {
@@ -345,6 +363,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		document.getElementById("small-image-input"),*/
 		document.getElementById("description-input-1"),
 		document.getElementById("description-input-2"),
+		document.getElementById("start-timestamp"),
 		document.getElementById("presence-id"),
 		document.getElementById("small-image-input")
 	]
@@ -379,14 +398,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	//stop presence
 	document.getElementById("stop").addEventListener("click", () => {
-		client.destroy()
+		if (client) {
+			client.clearActivity()
+			client.destroy()
+			client = null
+		}
 		document.getElementById("stop").setAttribute("hidden", "true")
 		document.getElementById("test").setAttribute("class", "btn primary enable-on-clientid mr")
 		document.getElementById("pfp").setAttribute("src", "assets/wumpsearch.gif")
 	})
 	//launch presence
 	document.getElementById("test").addEventListener("click", () => {
-		client.destroy()
+		if (client) {
+			client.destroy()
+			client = null
+		}
 
 		id = document.getElementById("presence-id").value
 		fullpath = os.platform() == "win32" ? opendir + "\\" + id + ".json" : dir + "/" + id + ".json"
@@ -413,34 +439,44 @@ document.addEventListener("DOMContentLoaded", () => {
         		options.largeimage = '';
         		options.smallimage = '';
            	}
+		
 		if (options.largeimage !== '') {
 			activity.largeImageKey = options.largeimage
 			// If you change this and some asks about this, please still give me credit :)
-			activity.largeImageText = "Made with ThatOneCalculator's Discord RPC Maker (v2.1)!"
+			// activity.largeImageText = "Made with ThatOneCalculator's Discord RPC Maker (v2.1)!"
 		}
 		if (options.smallimage !== '') {
 			activity.smallImageKey = options.smallimage
 			// Same applies with assets.large_text
-			activity.smallImageText = 'https://drpcm.t1c.dev/'
+			// activity.smallImageText = 'https://drpcm.t1c.dev/'
 		}
 		if (assets !== {}) { activity.assets = assets }
 		if (options.description !== '') { activity.details = options.description.substring(0, 63) }
 		if (options.state !== '') { activity.state = options.state.substring(0, 63) }
 		if (options.buttons.length !== 0) { activity.buttons = options.buttons }
 
+		if (options.startTimestamp) {
+			let elapsedTime = Date.now()/1000 - options.startTimestamp
+			if (!activity.state && elapsedTime > 24*60*60) {
+				let days = Math.floor(elapsedTime/24/60/60)
+				activity.state = `${days} day${days == 1 ? '' : 's'}`
+			}
+			console.log(activity.state, elapsedTime)
+		}
 
 		settings = JSON.parse(fs.readFileSync(settingspath, 'utf8'))
 		if (settings.showtimestamp == true) {
-			activity.startTimestamp = Date.now()
+			activity.startTimestamp = options.startTimestamp ?? Date.now()/1000
 		}
 
 		function assembleClient(timeout = 5000) {
 			console.log(options)
-			client.destroy()
+			if (client) client.destroy()
 			client = new RPC.Client({ transport: 'ipc' })
 			client.on('ready', () => {
 				running = true;
 				client.setActivity(activity);
+				console.log("started up client with activity", activity)
 				client.transport.socket.on("close", (c, s) => {
 					assembleClient()
 				})
@@ -811,6 +847,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			height: 700,
 			webPreferences: {
 				nodeIntegration: true,
+				sandbox: false,
 				preload: `${__dirname}${slash}clientidDetect.js`
 			}
 		});
@@ -851,7 +888,7 @@ function updatePreview(type) {
 
 	if (type == "largeimg") { //large - if image from id not found, just put placeholder there
 		let imgid = getImageIdFromName(largeimage.value)
-		console.log(imgid)
+		// console.log(imgid)
 		if (imgid == "") {
 			largeimageprev.setAttribute("src", "assets/placeholder.png")
 			document.getElementById("small-image-input").setAttribute("disabled", "")
@@ -863,7 +900,7 @@ function updatePreview(type) {
 		}
 	} else if (type == "smallimg") { //small - if image from id not found, just put placeholder there
 		let imgid = getImageIdFromName(smallimage.value)
-		console.log(imgid)
+		// console.log(imgid)
 		if (imgid == "") {
 			smallimageprev.setAttribute("src", "assets/blank.png")
 		} else {
@@ -893,6 +930,7 @@ function updatePreview(type) {
  */
 function registerLinkToOpenInBrowser(elemid, link) {
 	let elem = document.querySelector(`#${elemid}`)
+	if (!elem) return
 
 	elem.addEventListener("click", () => {
 		shell.openExternal(link)
@@ -958,27 +996,25 @@ function removeAllChildNodes(parent) {
 
 function loadSavedPresences() {
 	let files = fs.readdir(dir, (directory, files) => {
-		console.log(files)
+		files = files.filter(file => file.includes(".json") && !file.includes("settings"))
+		console.log("loading saved presences", files)
 		let wrapper = document.getElementById('presence-scroller')
 		files.forEach(file => {
-			console.log(file)
-			if (file.includes(".json") && file.includes("settings") == false) {
-				let presence = JSON.parse(fs.readFileSync(dir + file, 'utf8'));
-				let elem = document.createElement('div')
-				html = `
+			let presence = JSON.parse(fs.readFileSync(dir + file, 'utf8'));
+			let elem = document.createElement('div')
+			html = `
 			<div class="presence-list-item">
 				<div class="presence-item-title">${presence.name}</div>
 				<div class="presence-item-id text secondary">File: ${file.replaceAll(".json", "")}</div>
 				<button class="presence-edit"><i class="fas fa-edit"></i></button>
 			</div>
 			`
-				elem.innerHTML = html
-				wrapper.appendChild(elem)
+			elem.innerHTML = html
+			wrapper.appendChild(elem)
 
-				elem.querySelector('.presence-edit').addEventListener("click", () => {
-					loadPresence(presence, file)
-				})
-			}
+			elem.querySelector('.presence-edit').addEventListener("click", () => {
+				loadPresence(presence, file)
+			})
 		})
 	})
 }

@@ -386,8 +386,13 @@ hr.modalbody {
   grid-column: 2/5;
 }
 
-.button1 {
+.start-timestamp {
   grid-row: 10/11;
+  grid-column: 2/5;
+}
+
+.button1 {
+  grid-row: 11/12;
   grid-column: 2/5;
   display: flex;
   justify-content: flex-end;
@@ -414,7 +419,7 @@ hr.modalbody {
 }
 
 .button2 {
-  grid-row: 11/12;
+  grid-row: 12/13;
   grid-column: 2/5;
   display: flex;
   justify-content: flex-end;
@@ -690,7 +695,7 @@ hr.modalbody {
 
 #delete-presence {
   margin-top: 0.4rem !important;
-  grid-row: 12 / 14;
+  grid-row: 13 / 15;
   grid-column: 2 / 4;
 }
 
